@@ -1,60 +1,73 @@
-from flask import Flask
+from flask import Flask, render_template_string
 import requests
-import threading
-import time
 
 app = Flask(__name__)
 
-price_data = {
-    "BTC": None,
-    "ETH": None,
-    "LTC": None,
-    "DOGE": None
-}
+SYMBOLS = ["BTC", "ETH", "DOGE", "LTC", "SOL", "ADA", "AVAX", "SHIB"]  # Add or remove as needed
 
-def fetch_prices():
-    while True:
-        try:
-            response = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,litecoin,dogecoin&vs_currencies=usd')
-            if response.status_code == 200:
-                data = response.json()
-                price_data['BTC'] = data['bitcoin']['usd']
-                price_data['ETH'] = data['ethereum']['usd']
-                price_data['LTC'] = data['litecoin']['usd']
-                price_data['DOGE'] = data['dogecoin']['usd']
-        except Exception as e:
-            print("Error fetching prices:", e)
-        time.sleep(30)
+# Store last prices to compare
+last_prices = {}
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kaido Live Crypto</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #0d0d0d; color: #f0f0f0; }
+        table { margin: auto; border-collapse: collapse; width: 90%; }
+        th, td { padding: 10px; border: 1px solid #333; text-align: center; }
+        th { background-color: #222; }
+        tr:nth-child(even) { background-color: #1a1a1a; }
+        .up { color: #00ff00; }    /* Bright green for up */
+        .down { color: #ff3333; }  /* Bright red for down */
+    </style>
+</head>
+<body>
+    <h1>Kaido Live Feed (Auto every 5 sec)</h1>
+    <table>
+        <tr>
+            <th>Symbol</th>
+            <th>Price (USD)</th>
+        </tr>
+        {% for symbol, info in prices.items() %}
+        <tr>
+            <td>{{ symbol }}</td>
+            <td class="{{ info['class'] }}">{{ info['price'] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
+"""
 
 @app.route('/')
 def index():
-    html = """
-    <html>
-    <head>
-        <title>Kaido - Live Crypto Prices</title>
-        <style>
-            body { font-family: Arial, sans-serif; background-color: #0a0a0a; color: white; text-align: center; }
-            table { margin: auto; border-collapse: collapse; margin-top: 50px; }
-            th, td { padding: 15px; border: 1px solid white; }
-            th { background-color: #333; }
-            tr:nth-child(even) { background-color: #222; }
-        </style>
-    </head>
-    <body>
-        <h1>Kaido - Live Crypto Prices</h1>
-        <table>
-            <tr><th>Crypto</th><th>Price (USD)</th></tr>
-            <tr><td>BTC</td><td>${}</td></tr>
-            <tr><td>ETH</td><td>${}</td></tr>
-            <tr><td>LTC</td><td>${}</td></tr>
-            <tr><td>DOGE</td><td>${}</td></tr>
-        </table>
-    </body>
-    </html>
-    """.format(price_data['BTC'], price_data['ETH'], price_data['LTC'], price_data['DOGE'])
-    return html
+    prices = {}
+    for symbol in SYMBOLS:
+        try:
+            url = f"https://api.coinbase.com/v2/prices/{symbol}-USD/spot"
+            r = requests.get(url)
+            price = float(r.json()["data"]["amount"])
+            
+            # Compare price movement
+            if symbol in last_prices:
+                if price > last_prices[symbol]:
+                    color_class = "up"
+                elif price < last_prices[symbol]:
+                    color_class = "down"
+                else:
+                    color_class = ""
+            else:
+                color_class = ""
+            
+            prices[symbol] = {"price": f"${price:.4f}", "class": color_class}
+            last_prices[symbol] = price
 
-if __name__ == '__main__':
-    price_thread = threading.Thread(target=fetch_prices)
-    price_thread.start()
+        except Exception as e:
+            prices[symbol] = {"price": "Error", "class": "down"}
+    return render_template_string(HTML_TEMPLATE, prices=prices)
+
+if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
